@@ -1,4 +1,4 @@
-GHACCOUNT := hooklift
+GHACCOUNT := tifler
 NAME := gowsdl
 VERSION := v0.5.0
 
