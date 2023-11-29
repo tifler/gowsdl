@@ -3,11 +3,14 @@ package soap
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -189,24 +192,30 @@ const (
 	XmlNsSoapEnv    string = "http://schemas.xmlsoap.org/soap/envelope/"
 )
 
+type WSSNonce struct {
+	EncodingType string `xml:",attr"`
+	Value        string `xml:",chardata"`
+}
+
+type WSSCreated struct {
+	XMLName xml.Name `xml:"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd Created"`
+	Value   string   `xml:",chardata"`
+}
+
 type WSSSecurityHeader struct {
-	XMLName   xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ wsse:Security"`
-	XmlNSWsse string   `xml:"xmlns:wsse,attr"`
+	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ wsse:Security"`
 
 	MustUnderstand string `xml:"mustUnderstand,attr,omitempty"`
 
-	Token *WSSUsernameToken `xml:",omitempty"`
+	UsernameToken *WSSUsernameToken `xml:",omitempty"`
 }
 
 type WSSUsernameToken struct {
-	XMLName   xml.Name `xml:"wsse:UsernameToken"`
-	XmlNSWsu  string   `xml:"xmlns:wsu,attr"`
-	XmlNSWsse string   `xml:"xmlns:wsse,attr"`
-
-	Id string `xml:"wsu:Id,attr,omitempty"`
-
-	Username *WSSUsername `xml:",omitempty"`
-	Password *WSSPassword `xml:",omitempty"`
+	XMLName  xml.Name `xml:"wsse:UsernameToken"`
+	Username string
+	Password *WSSPassword
+	Nonce    *WSSNonce
+	Created  *WSSCreated
 }
 
 type WSSUsername struct {
@@ -217,19 +226,39 @@ type WSSUsername struct {
 }
 
 type WSSPassword struct {
-	XMLName   xml.Name `xml:"wsse:Password"`
-	XmlNSWsse string   `xml:"xmlns:wsse,attr"`
-	XmlNSType string   `xml:"Type,attr"`
-
-	Data string `xml:",chardata"`
+	Type  string `xml:",attr"`
+	Value string `xml:",chardata"`
 }
 
-// NewWSSSecurityHeader creates WSSSecurityHeader instance
-func NewWSSSecurityHeader(user, pass, tokenID, mustUnderstand string) *WSSSecurityHeader {
-	hdr := &WSSSecurityHeader{XmlNSWsse: WssNsWSSE, MustUnderstand: mustUnderstand}
-	hdr.Token = &WSSUsernameToken{XmlNSWsu: WssNsWSU, XmlNSWsse: WssNsWSSE, Id: tokenID}
-	hdr.Token.Username = &WSSUsername{XmlNSWsse: WssNsWSSE, Data: user}
-	hdr.Token.Password = &WSSPassword{XmlNSWsse: WssNsWSSE, XmlNSType: WssNsType, Data: pass}
+func NewWSSSecurityHeader(user, pass string, created time.Time) *WSSSecurityHeader {
+	hdr := &WSSSecurityHeader{MustUnderstand: "1"}
+
+	// Username
+	hdr.UsernameToken.Username = user
+
+	// Created
+	if created.Year() != 0 {
+		hdr.UsernameToken.Created.Value = created.Format("2006-01-02T15:04:05.999") + "Z"
+		//fmt.Println("------", hdr.UsernameToken.Created.Value, created.Nanosecond())
+
+	} else {
+		hdr.UsernameToken.Created.Value = time.Now().Format("2006-01-02T15:04:05.999") + "Z"
+	}
+
+	// Nonce
+	b := make([]byte, 16)
+	rand.Read(b)
+	nonce := fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	hdr.UsernameToken.Nonce.EncodingType = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary"
+	hdr.UsernameToken.Nonce.Value = base64.StdEncoding.EncodeToString([]byte(nonce))
+
+	// Password
+	h := sha1.New()
+	h.Write([]byte(nonce + hdr.UsernameToken.Created.Value + pass))
+	hdr.UsernameToken.Password.Type = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"
+	hdr.UsernameToken.Password.Value = base64.StdEncoding.EncodeToString(h.Sum(nil))
+
 	return hdr
 }
 
