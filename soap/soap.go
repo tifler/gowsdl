@@ -3,6 +3,7 @@ package soap
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
@@ -10,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -202,27 +202,19 @@ type WSSCreated struct {
 	Value   string   `xml:",chardata"`
 }
 
-type WSSSecurityHeader struct {
-	XMLName xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ wsse:Security"`
-
-	MustUnderstand string `xml:"mustUnderstand,attr,omitempty"`
-
-	UsernameToken *WSSUsernameToken `xml:",omitempty"`
-}
-
 type WSSUsernameToken struct {
-	XMLName  xml.Name `xml:"wsse:UsernameToken"`
 	Username string
 	Password WSSPassword
 	Nonce    WSSNonce
 	Created  WSSCreated
 }
 
-type WSSUsername struct {
-	XMLName   xml.Name `xml:"wsse:Username"`
-	XmlNSWsse string   `xml:"xmlns:wsse,attr"`
+type WSSSecurityHeader struct {
+	XMLName xml.Name `xml:"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd Security"`
 
-	Data string `xml:",chardata"`
+	MustUnderstand string `xml:"mustUnderstand,attr,omitempty"`
+
+	UsernameToken WSSUsernameToken `xml:",omitempty"`
 }
 
 type WSSPassword struct {

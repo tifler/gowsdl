@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,7 +138,7 @@ func TestClient_Attachments_WithAttachmentResponse(t *testing.T) {
 		for k, v := range r.Header {
 			w.Header().Set(k, v[0])
 		}
-		bodyBuf, _ := ioutil.ReadAll(r.Body)
+		bodyBuf, _ := io.ReadAll(r.Body)
 		_, err := w.Write(bodyBuf)
 		if err != nil {
 			panic(err)
@@ -183,7 +183,7 @@ func TestClient_MTOM(t *testing.T) {
 		for k, v := range r.Header {
 			w.Header().Set(k, v[0])
 		}
-		bodyBuf, _ := ioutil.ReadAll(r.Body)
+		bodyBuf, _ := io.ReadAll(r.Body)
 		w.Write(bodyBuf)
 	}))
 	defer ts.Close()
@@ -851,4 +851,37 @@ func TestHTTPError(t *testing.T) {
 		})
 	}
 
+}
+
+func TestWSSSecurityHeader(t *testing.T) {
+	var pingRequest = new(Ping)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		xml.NewDecoder(r.Body).Decode(pingRequest)
+		rsp := `<?xml version="1.0" encoding="utf-8"?>
+		<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+			<soap:Body>
+				<PingResponse xmlns="http://example.com/service.xsd">
+					<PingResult>
+						<Message>Pong hi</Message>
+					</PingResult>
+				</PingResponse>
+			</soap:Body>
+		</soap:Envelope>`
+		w.Write([]byte(rsp))
+	}))
+	defer ts.Close()
+
+	client := NewClient(ts.URL)
+	client.AddHeader(NewWSSSecurityHeader("username", "password", time.Now()))
+
+	req := &Ping{Request: &PingRequest{Message: "Hi"}}
+	reply := &PingResponse{}
+	if err := client.Call("GetData", req, reply); err != nil {
+		t.Fatalf("couln't call service: %v", err)
+	}
+
+	wantedMsg := "Pong hi"
+	if reply.PingResult.Message != wantedMsg {
+		t.Errorf("got msg %s wanted %s", reply.PingResult.Message, wantedMsg)
+	}
 }
