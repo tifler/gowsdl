@@ -213,9 +213,9 @@ type WSSSecurityHeader struct {
 type WSSUsernameToken struct {
 	XMLName  xml.Name `xml:"wsse:UsernameToken"`
 	Username string
-	Password *WSSPassword
-	Nonce    *WSSNonce
-	Created  *WSSCreated
+	Password WSSPassword
+	Nonce    WSSNonce
+	Created  WSSCreated
 }
 
 type WSSUsername struct {
